@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Mental Health Screening System</title>
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+:root{
+    --primary:#3f51b5;
+    --primary-dark:#2f3fa0;
+    --bg:#f4f6fb;
+    --card:#ffffff;
+    --text:#333;
+    --muted:#666;
+    --success:#4caf50;
+    --warning:#ff9800;
+    --danger:#f44336;
+    --border:#e0e0e0;
+}
+
+*{ 
+    box-sizing:border-box; 
+    font-family:"Segoe UI", system-ui, -apple-system, sans-serif;
+    margin:0;
+    padding:0;
+}
+
+body{
+    background:linear-gradient(135deg, #f5f7ff 0%, #eef1ff 100%);
+    min-height:100vh;
+    color:var(--text);
+    line-height:1.6;
+}
+
+.container{
+    max-width:1000px;
+    margin:0 auto;
+    padding:20px;
+}
+
+header{
+    background:linear-gradient(135deg, var(--primary), #5c6bc0);
+    color:white;
+    padding:2rem;
+    border-radius:20px;
+    text-align:center;
+    margin-bottom:2rem;
+    box-shadow:0 10px 30px rgba(63, 81, 181, 0.2);
+    position:relative;
+    overflow:hidden;
+}
+
+header::before{
+    content:"";
+    position:absolute;
+    top:-50%;
+    left:-50%;
+    width:200%;
+    height:200%;
+    background:radial-gradient(circle, rgba(255,255,255,0.1) 1px, transparent 1px);
+    background-size:50px 50px;
+    opacity:0.3;
+}
+
+header h1{
+    font-size:2.2rem;
+    margin-bottom:0.5rem;
+    font-weight:600;
+}
+
+header p{
+    opacity:0.9;
+    font-size:1rem;
+    max-width:600px;
+    margin:0 auto;
+}
+
+.subtitle{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:10px;
+    margin-top:10px;
+    font-size:0.9rem;
+    opacity:0.8;
+}
+
+.card{
+    background:var(--card);
+    border-radius:18px;
+    padding:2rem;
+    box-shadow:0 8px 30px rgba(0,0,0,0.08);
+    margin-bottom:2rem;
+    border:1px solid var(--border);
+    transition:transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.card:hover{
+    transform:translateY(-5px);
+    box-shadow:0 15px 40px rgba(0,0,0,0.12);
+}
+
+.card h3{
+    color:var(--primary);
+    margin-bottom:1rem;
+    font-size:1.4rem;
+    display:flex;
+    align-items:center;
+    gap:10px;
+}
+
+.card h3 i{
+    font-size:1.2rem;
+}
+
+.input-group{
+    margin-bottom:1.5rem;
+}
+
+textarea{
+    width:100%;
+    min-height:180px;
+    padding:1.2rem;
+    border-radius:12px;
+    border:2px solid var(--border);
+    font-size:1rem;
+    resize:vertical;
+    transition:all 0.3s ease;
+    line-height:1.5;
+    font-family:inherit;
+}
+
+textarea:focus{
+    outline:none;
+    border-color:var(--primary);
+    box-shadow:0 0 0 3px rgba(63, 81, 181, 0.1);
+}
+
+.samples{
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+    margin-top:1rem;
+}
+
+.sample-btn{
+    padding:8px 16px;
+    background:#e8eaf6;
+    border:none;
+    border-radius:20px;
+    cursor:pointer;
+    font-size:0.85rem;
+    color:var(--primary);
+    transition:all 0.2s ease;
+}
+
+.sample-btn:hover{
+    background:#d1d9ff;
+    transform:translateY(-2px);
+}
+
+.btn{
+    display:inline-flex;
+    align-items:center;
+    gap:10px;
+    padding:1rem 2rem;
+    background:linear-gradient(135deg, var(--primary), var(--primary-dark));
+    color:white;
+    border:none;
+    border-radius:50px;
+    cursor:pointer;
+    font-size:1rem;
+    font-weight:600;
+    transition:all 0.3s ease;
+    box-shadow:0 5px 15px rgba(63, 81, 181, 0.3);
+}
+
+.btn:hover{
+    transform:translateY(-3px);
+    box-shadow:0 8px 20px rgba(63, 81, 181, 0.4);
+}
+
+.btn:active{
+    transform:translateY(-1px);
+}
+
+.processing{
+    display:none;
+    margin-top:1.5rem;
+    padding:1rem;
+    background:#f8f9ff;
+    border-radius:12px;
+    text-align:center;
+    color:var(--muted);
+}
+
+.processing i{
+    margin-right:10px;
+    color:var(--primary);
+}
+
+.result{
+    display:none;
+    animation:fadeIn 0.5s ease;
+}
+
+@keyframes fadeIn{
+    from{ opacity:0; transform:translateY(20px); }
+    to{ opacity:1; transform:translateY(0); }
+}
+
+.result-header{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    flex-wrap:wrap;
+    gap:2rem;
+    margin-bottom:2rem;
+    padding-bottom:1.5rem;
+    border-bottom:2px solid var(--border);
+}
+
+.sentiment-box{
+    display:flex;
+    align-items:center;
+    gap:1.5rem;
+    flex-wrap:wrap;
+}
+
+.sentiment-circle{
+    width:100px;
+    height:100px;
+    border-radius:50%;
+    color:white;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    font-size:1.8rem;
+    font-weight:bold;
+    box-shadow:0 8px 20px rgba(0,0,0,0.15);
+}
+
+.sentiment-circle small{
+    font-size:0.9rem;
+    opacity:0.9;
+    margin-top:5px;
+}
+
+.positive{ background:linear-gradient(135deg, var(--success), #2e7d32); }
+.neutral{ background:linear-gradient(135deg, var(--warning), #ef6c00); }
+.negative{ background:linear-gradient(135deg, var(--danger), #c62828); }
+
+.info-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(250px, 1fr));
+    gap:1.5rem;
+    margin:2rem 0;
+}
+
+.info-box{
+    background:#f8f9ff;
+    padding:1.5rem;
+    border-radius:12px;
+    border-left:5px solid var(--primary);
+}
+
+.info-box span{
+    display:block;
+    font-size:0.85rem;
+    color:var(--muted);
+    margin-bottom:0.5rem;
+    text-transform:uppercase;
+    letter-spacing:1px;
+}
+
+.info-box strong{
+    font-size:1.2rem;
+    color:var(--text);
+}
+
+.risk-high{ border-left-color:var(--danger); }
+.risk-medium{ border-left-color:var(--warning); }
+.risk-low{ border-left-color:var(--success); }
+
+.chart-container{
+    margin:3.5rem 0;
+    padding:1.2rem;
+    background:#f8f9ff;
+    border-radius:12px;
+    text-align:left;
+}
+
+.stats{
+    display:flex;
+    justify-content:space-around;
+    flex-wrap:wrap;
+    gap:1rem;
+    margin:1.5rem 0;
+    text-align:center;
+}
+
+.stat-item{
+    flex:1;
+    min-width:150px;
+    padding:15px;
+}
+
+.stat-value{
+    font-size:2rem;
+    font-weight:bold;
+    color:var(--primary);
+    margin-bottom:5px;
+}
+
+.stat-label{
+    font-size:0.85rem;
+    color:var(--muted);
+    margin-bottom:10px;
+    display:block;
+}
+
+.confidence-bar {
+    width: 100%;
+    height: 8px;
+    background: #e0e0e0;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-top: 8px;
+}
+
+.confidence-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #4caf50, #81c784);
+    border-radius: 4px;
+    transition: width 1s ease-out;
+}
+
+.recommendation-box{
+    background:linear-gradient(135deg, #e8f5e9, #f1f8e9);
+    padding:1.5rem;
+    border-radius:12px;
+    border-left:5px solid var(--success);
+    margin-top:2rem;
+}
+
+.recommendation-box h4{
+    color:#2e7d32;
+    margin-bottom:1rem;
+    display:flex;
+    align-items:center;
+    gap:10px;
+}
+
+.disclaimer{
+    text-align:center;
+    padding:1.5rem;
+    margin-top:3rem;
+    background:#fff8e1;
+    border-radius:12px;
+    border:2px dashed #ffd54f;
+    font-size:0.85rem;
+    color:#5d4037;
+}
+
+.footer-links{
+    display:flex;
+    justify-content:center;
+    gap:2rem;
+    margin-top:2rem;
+    flex-wrap:wrap;
+}
+
+.footer-link{
+    color:var(--primary);
+    text-decoration:none;
+    font-size:0.9rem;
+}
+
+.footer-link:hover{
+    text-decoration:underline;
+}
+
+@media (max-width:768px){
+    .container{
+        padding:1rem;
+    }
+    
+    header{
+        padding:1.5rem;
+    }
+    
+    header h1{
+        font-size:1.8rem;
+    }
+    
+    .result-header{
+        flex-direction:column;
+        align-items:flex-start;
+    }
+    
+    .sentiment-circle{
+        width:80px;
+        height:80px;
+        font-size:1.4rem;
+    }
+    
+    .stat-item{
+        min-width:120px;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<header>
+    <h1><i class="fas fa-brain"></i> AI Mental Health Screening System</h1>
+    <p>Text-based mental health risk assessment using real-world data and machine learning</p>
+    <div class="subtitle">
+        <i class="fas fa-shield-alt"></i> Secure • Anonymous • Research-Based
+    </div>
+</header>
+
+<div class="card">
+    <h3><i class="fas fa-edit"></i> Input Text for Analysis</h3>
+    <p style="color:var(--muted); margin-bottom:1.5rem;">
+        Enter a description of your thoughts, feelings, or mood. The system will analyze it for mental health indicators.
+    </p>
+    
+    <div class="input-group">
+        <textarea id="userText" placeholder="Example: I've been feeling extremely anxious lately, having trouble sleeping, and find it hard to concentrate on my work. I feel overwhelmed most days..."></textarea>
+        
+        <div class="samples">
+            <div style="font-size:0.9rem; color:var(--muted); margin-right:10px;">Try sample:</div>
+            <button class="sample-btn" onclick="setSample(0)">Anxiety Example</button>
+            <button class="sample-btn" onclick="setSample(1)">Depression Example</button>
+            <button class="sample-btn" onclick="setSample(2)">Stress Example</button>
+            <button class="sample-btn" onclick="setSample(3)">Positive Example</button>
+        </div>
+    </div>
+    
+    <button class="btn" onclick="analyze()" id="analyzeBtn">
+        <i class="fas fa-chart-line"></i> Analyze Text
+    </button>
+    
+    <div class="processing" id="processing">
+        <i class="fas fa-spinner fa-spin"></i> 
+        <div>
+            <strong>Analyzing your text...</strong>
+            <div style="font-size:0.9rem; margin-top:5px;">
+                Processing sentiment, extracting keywords, and evaluating mental health indicators
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card result" id="resultBox">
+    <div class="result-header">
+        <div>
+            <h3><i class="fas fa-clipboard-check"></i> Analysis Results</h3>
+            <p id="time" style="color:var(--muted);"></p>
+        </div>
+        
+        <div class="sentiment-box">
+            <div id="sentimentCircle" class="sentiment-circle">
+                <div id="sentimentScore">0</div>
+                <small>Score</small>
+            </div>
+            <div>
+                <strong id="sentimentLabel"></strong>
+                <div style="font-size:0.9rem; color:var(--muted);">
+                    <i class="fas fa-smile"></i> Emotional Sentiment
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="stats">
+        <div class="stat-item">
+            <div class="stat-value" id="confidenceScore">0%</div>
+            <div class="stat-label">Model Confidence</div>
+            <!-- Confidence Bar -->
+            <div class="confidence-bar">
+                <div class="confidence-fill" id="confidenceFill"></div>
+            </div>
+        </div>
+        
+        <div class="stat-item">
+            <div class="stat-value" id="wordCount">0</div>
+            <div class="stat-label">Words Analyzed</div>
+        </div>
+        
+        <div class="stat-item">
+            <div class="stat-value" id="riskValue">0%</div>
+            <div class="stat-label">Risk Score</div>
+        </div>
+    </div>
+    
+    <div class="info-grid">
+        <div class="info-box" id="categoryBox">
+            <span><i class="fas fa-tag"></i> Mental Health Category</span>
+            <strong id="category"></strong>
+        </div>
+        <div class="info-box" id="riskBox">
+            <span><i class="fas fa-exclamation-triangle"></i> Risk Level</span>
+            <strong id="risk"></strong>
+        </div>
+    </div>
+    
+    <div class="chart-container">
+        <h4><i class="fas fa-chart-bar"></i> Risk Level Visualization</h4>
+        <canvas id="riskChart"</canvas>
+
+    </div>
+    
+    <div class="recommendation-box">
+        <h4><i class="fas fa-hands-helping"></i> Personalized Recommendations</h4>
+        <p id="recommendation"></p>
+    </div>
+</div>
+
+<div class="disclaimer">
+    <p><strong>⚠️ Important Disclaimer:</strong></p>
+    <p>This system is an AI-powered screening tool for educational and research purposes only. It does NOT provide medical diagnosis, treatment, or crisis intervention. If you are experiencing a mental health emergency, please contact emergency services or a crisis helpline immediately.</p>
+    <p>Always consult qualified healthcare professionals for medical advice.</p>
+</div>
+
+<div class="footer-links">
+    <a href="#" class="footer-link"><i class="fas fa-lock"></i> Privacy Policy</a>
+    <a href="#" class="footer-link"><i class="fas fa-book"></i> Research Basis</a>
+    <a href="#" class="footer-link"><i class="fas fa-phone-alt"></i> Crisis Resources</a>
+    <a href="#" class="footer-link"><i class="fas fa-info-circle"></i> About This Project</a>
+</div>
+
+</div>
+
+<script>
+// Sample texts for testing
+const samples = [
+    "I've been feeling extremely anxious lately, having trouble sleeping, and find it hard to concentrate on my work. I feel overwhelmed most days and sometimes have panic attacks.",
+    "For the past few weeks, I've lost interest in activities I used to enjoy. I feel sad all the time, have no energy, and sometimes think that life isn't worth living anymore.",
+    "Work has been incredibly stressful with tight deadlines. I'm having trouble relaxing even after work hours, and I'm irritable with my family. My sleep quality has decreased significantly.",
+    "I feel generally positive about life. I have good relationships, enjoy my work, and practice mindfulness regularly. Some days are challenging, but I have healthy coping mechanisms."
+];
+
+let chart = null;
+let riskColors = {
+    'High': '#f44336',
+    'Medium': '#ff9800',
+    'Low': '#4caf50'
+};
+
+function setSample(index) {
+    document.getElementById('userText').value = samples[index];
+}
+
+function analyze() {
+    const text = document.getElementById('userText').value.trim();
+    const analyzeBtn = document.getElementById('analyzeBtn');
+    
+    if (!text) {
+        alert("Please enter some text for analysis.");
+        return;
+    }
+    
+    if (text.length < 10) {
+        alert("Please enter at least 10 characters for meaningful analysis.");
+        return;
+    }
+    
+    // Show processing
+    document.getElementById('processing').style.display = 'flex';
+    analyzeBtn.disabled = true;
+    analyzeBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+    
+    // Send request
+    fetch("/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({text: text})
+    })
+    .then(res => {
+        if (!res.ok) {
+            throw new Error(`HTTP error! status: ${res.status}`);
+        }
+        return res.json();
+    })
+    .then(data => {
+        if (data.error) {
+            throw new Error(data.error);
+        }
+        document.getElementById('processing').style.display = 'none';
+        analyzeBtn.disabled = false;
+        analyzeBtn.innerHTML = '<i class="fas fa-chart-line"></i> Analyze Text';
+        showResult(data);
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        document.getElementById('processing').style.display = 'none';
+        analyzeBtn.disabled = false;
+        analyzeBtn.innerHTML = '<i class="fas fa-chart-line"></i> Analyze Text';
+        alert(`Analysis failed: ${error.message}. Please try again.`);
+    });
+}
+
+function showResult(data) {
+    // SAFETY CHECK
+    if (!data || data.error) {
+        alert(data?.error || "Unexpected error occurred");
+        return;
+    }
+
+    // Show result section
+    const resultBox = document.getElementById('resultBox');
+    resultBox.style.display = 'block';
+    resultBox.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    // Time
+    document.getElementById('time').innerHTML =
+        `<i class="far fa-clock"></i> Analyzed: ${new Date().toLocaleString()}`;
+
+    // ===== SENTIMENT =====
+    const sentimentLabel = data.sentiment_label || "Neutral";
+    const sentimentScore = data.sentiment_score ?? 0;
+
+    document.getElementById('sentimentScore').textContent = sentimentScore.toFixed(2);
+    document.getElementById('sentimentLabel').textContent = sentimentLabel;
+
+    const sentimentCircle = document.getElementById('sentimentCircle');
+    sentimentCircle.className = 'sentiment-circle';
+
+    if (sentimentLabel.toLowerCase().includes('positive')) {
+        sentimentCircle.classList.add('positive');
+    } else if (sentimentLabel.toLowerCase().includes('negative')) {
+        sentimentCircle.classList.add('negative');
+    } else {
+        sentimentCircle.classList.add('neutral');
+    }
+
+    // ===== CATEGORY & RISK =====
+    document.getElementById('category').textContent =
+        data.category || "Not Available";
+
+    const riskText = data.risk || "Low";
+    document.getElementById('risk').textContent = riskText;
+
+    // Color-code risk box
+    const riskBox = document.getElementById('riskBox');
+    riskBox.className = 'info-box';
+
+    if (riskText.includes('High')) {
+        riskBox.classList.add('risk-high');
+    } else if (riskText.includes('Medium')) {
+        riskBox.classList.add('risk-medium');
+    } else {
+        riskBox.classList.add('risk-low');
+    }
+
+    // ===== CONFIDENCE =====
+    let confidence = 0;
+    if (data.confidence !== undefined && data.confidence !== null) {
+        confidence = parseFloat(data.confidence);
+    } else {
+        // Fallback: calculate from sentiment if confidence not provided
+        confidence = Math.min(100, Math.max(0, (Math.abs(sentimentScore) * 100) + 50));
+    }
+    
+    if (isNaN(confidence)) {
+        confidence = 0;
+    }
+    
+    document.getElementById('confidenceScore').textContent = confidence.toFixed(1) + '%';
+    
+    // Animate confidence bar
+    setTimeout(() => {
+        const confidenceFill = document.getElementById('confidenceFill');
+        confidenceFill.style.width = confidence + '%';
+        
+        // Color based on confidence
+        if (confidence >= 80) {
+            confidenceFill.style.background = 'linear-gradient(90deg, #4caf50, #66bb6a)';
+        } else if (confidence >= 60) {
+            confidenceFill.style.background = 'linear-gradient(90deg, #ff9800, #ffb74d)';
+        } else {
+            confidenceFill.style.background = 'linear-gradient(90deg, #f44336, #e57373)';
+        }
+    }, 100);
+
+    // ===== WORD COUNT =====
+    const wordCount = document.getElementById('userText').value.trim().split(/\s+/).length;
+    document.getElementById('wordCount').textContent = wordCount;
+
+    // ===== RISK VALUE =====
+    const riskValue = document.getElementById('riskValue');
+    let riskPercent = 25; // Default low
+    
+    if (riskText.includes('High')) {
+        riskPercent = 85;
+    } else if (riskText.includes('Medium')) {
+        riskPercent = 55;
+    }
+    
+    riskValue.textContent = riskPercent + "%";
+    riskValue.style.color = riskText.includes('High') ? '#f44336' : 
+                           riskText.includes('Medium') ? '#ff9800' : '#4caf50';
+
+    // ===== RECOMMENDATION =====
+    document.getElementById('recommendation').textContent =
+        data.recommendation || "No recommendation available.";
+
+    // ===== CHART =====
+    drawChart(riskText);
+}
+
+function drawChart(riskText) {
+    const ctx = document.getElementById('riskChart').getContext('2d');
+
+    if (chart) {
+        chart.destroy();
+    }
+
+    let riskValue = 25; // Default low
+    let chartColor = '#4caf50'; // Default green
+    
+    if (riskText.includes('High')) {
+        riskValue = 85;
+        chartColor = '#f44336';
+    } else if (riskText.includes('Medium')) {
+        riskValue = 55;
+        chartColor = '#ff9800';
+    }
+
+    chart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Risk Level', 'Remaining'],
+            datasets: [{
+                data: [riskValue, 100 - riskValue],
+                backgroundColor: [chartColor, '#e0e0e0'],
+                borderWidth: 0
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            aspectRatio: 2,
+            cutout: '70%',
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return `${context.label}: ${context.parsed}%`;
+                        }
+                    }
+                }
+            },
+            animation: {
+                animateRotate: true,
+                animateScale: true,
+                duration: 1000
+            }
+        }
+    });
+}
+
+// Initialize with first sample
+window.onload = function() {
+    setSample(0);
+};
+</script>
+
+</body>
+</html>
