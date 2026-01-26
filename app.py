@@ -53,8 +53,8 @@ X_test_vec = vectorizer.transform(X_test)
 
 model = LogisticRegression(
     max_iter=2000,
-    solver="liblinear",   # IMPORTANT for stable predict_proba
-    multi_class="ovr"
+    solver="lbfgs",   # Changed from liblinear to support multiclass classification
+    
 )
 model.fit(X_train_vec, y_train)
 
