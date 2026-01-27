@@ -1,90 +1,97 @@
 # ==============================
-# Mental Health Web App (Flask)
-# Dataset: Kaggle Combined.csv
+# FINAL LSTM Inference Flask App
 # ==============================
 
 from flask import Flask, render_template, request, jsonify
-import pandas as pd
-import os
+from flask_cors import CORS
+import torch
+import torch.nn as nn
+import dill
 import re
-
-# ML & NLP
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import train_test_split
 from textblob import TextBlob
 
-# -------------------------------
+# ----------------------------
+# CONFIG
+# ----------------------------
+MODEL_PATH = "lstm_model.pth"
+TOKENIZER_PATH = "tokenizer.pkl"
+LABEL_ENCODER_PATH = "label_encoder.pkl"
+MAX_LEN = 100
+
+# ----------------------------
 # Flask App
-# -------------------------------
+# ----------------------------
 app = Flask(__name__)
+CORS(app)
 
-# -------------------------------
-# Load Dataset
-# -------------------------------
-DATA_PATH = "data/Combined.csv"
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-if not os.path.exists(DATA_PATH):
-    raise FileNotFoundError("❌ Dataset not found. Place Combined.csv inside data/ folder")
+# ----------------------------
+# Tokenizer (MUST MATCH TRAINING)
+# ----------------------------
+class SimpleTokenizer:
+    def __init__(self, oov_token="<OOV>"):
+        self.oov_token = oov_token
+        self.word_index = {}
 
-data = pd.read_csv(DATA_PATH)
-data = data.dropna(subset=["statement", "status"])
+    def texts_to_sequences(self, texts):
+        sequences = []
+        for text in texts:
+            seq = [
+                self.word_index.get(word, self.word_index[self.oov_token])
+                for word in text.split()
+            ]
+            sequences.append(seq)
+        return sequences
 
-X = data["statement"]
-y = data["status"]
+# ----------------------------
+# LSTM Model
+# ----------------------------
+class LSTMModel(nn.Module):
+    def __init__(self, vocab_size, embed_dim=128, hidden_dim=128, output_dim=7):
+        super().__init__()
+        self.embedding = nn.Embedding(vocab_size, embed_dim, padding_idx=0)
+        self.lstm = nn.LSTM(embed_dim, hidden_dim, batch_first=True)
+        self.fc = nn.Linear(hidden_dim, output_dim)
 
-print("✅ Dataset loaded:", data.shape)
+    def forward(self, x):
+        x = self.embedding(x)
+        _, (h, _) = self.lstm(x)
+        return self.fc(h[-1])
 
-# -------------------------------
-# Train ML Model
-# -------------------------------
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42, stratify=y
-)
+# ----------------------------
+# Load Artifacts
+# ----------------------------
+with open(TOKENIZER_PATH, "rb") as f:
+    tokenizer = dill.load(f)
 
-vectorizer = TfidfVectorizer(
-    stop_words="english",
-    max_features=5000,
-    ngram_range=(1, 2)  # improves confidence stability
-)
+with open(LABEL_ENCODER_PATH, "rb") as f:
+    label_encoder = dill.load(f)
 
-X_train_vec = vectorizer.fit_transform(X_train)
-X_test_vec = vectorizer.transform(X_test)
+# MUST match training-time vocab size
+VOCAB_SIZE = 20000
 
-model = LogisticRegression(
-    max_iter=2000,
-    solver="lbfgs",   # Changed from liblinear to support multiclass classification
-    
-)
-model.fit(X_train_vec, y_train)
+NUM_CLASSES = len(label_encoder.classes_)
 
-print("✅ Model trained successfully")
+model = LSTMModel(VOCAB_SIZE, output_dim=NUM_CLASSES).to(device)
+model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
+model.eval()
 
-# -------------------------------
-# Label Mapping (DATASET EXACT)
-# -------------------------------
-LABEL_MAP = {
-    "normal": "Normal",
-    "anxiety": "Anxiety",
-    "depression": "Depression",
-    "stress": "Stress",
-    "bipolar": "Bipolar",
-    "ptsd": "PTSD",
-    "suicidal": "Suicidal"
-}
+print("✅ LSTM model and tokenizer loaded successfully")
 
-# -------------------------------
-# Suicide Intent Keywords (SAFETY)
-# -------------------------------
-SUICIDE_KEYWORDS = [
-    "want to die", "kill myself", "end my life",
-    "suicide", "better off dead", "no reason to live",
-    "wish i were dead", "end it all"
-]
+# ----------------------------
+# Helpers
+# ----------------------------
+def clean_text(text):
+    text = text.lower()
+    text = re.sub(r"http\S+", "", text)
+    text = re.sub(r"[^a-z\s]", "", text)
+    return re.sub(r"\s+", " ", text).strip()
 
-# -------------------------------
-# Risk Mapping (DATASET-ALIGNED)
-# -------------------------------
+def pad_sequence(seq):
+    seq = seq[:MAX_LEN]
+    return seq + [0] * (MAX_LEN - len(seq))
+
 def map_risk(category):
     if category in ["Suicidal", "Bipolar", "PTSD"]:
         return "High"
@@ -92,66 +99,60 @@ def map_risk(category):
         return "Medium"
     return "Low"
 
-# -------------------------------
-# Recommendation Engine
-# -------------------------------
 def get_recommendation(category, risk):
-
     if category == "Suicidal":
         return (
             "🚨 High-risk mental health state detected. "
             "Immediate professional help is strongly recommended. "
             "If you are in danger, contact emergency services or a suicide prevention helpline immediately."
         )
-
     if category == "Bipolar":
         return "Consult a psychiatrist for mood stabilization and maintain a structured routine."
-
     if category == "PTSD":
-        return "Trauma-focused therapy and professional counseling are strongly recommended."
-
+        return "Trauma-focused therapy and professional counseling are recommended."
     if category == "Depression":
-        return "Therapy, regular routine, physical activity, and social support can be beneficial."
-
+        return "Therapy, regular routine, physical activity, and social support can help."
     if category == "Anxiety":
-        return "Mindfulness, breathing exercises, reduced caffeine intake, and professional guidance may help."
-
+        return "Mindfulness, breathing exercises, and professional guidance may help."
     if category == "Stress":
         return "Time management, adequate rest, and relaxation techniques are recommended."
-
     return "Maintain healthy habits and continue positive coping strategies."
 
-# -------------------------------
+# ----------------------------
 # Routes
-# -------------------------------
+# ----------------------------
 @app.route("/")
 def home():
     return render_template("index.html")
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
+    data = request.get_json(force=True, silent=True)
+    if not data or "text" not in data:
+        return jsonify({"error": "Invalid JSON input"}), 400
 
-    data = request.get_json()
-    user_text = data.get("text", "").strip()
-
-    if not user_text:
+    text = data["text"].strip()
+    if not text:
         return jsonify({"error": "Empty input"}), 400
 
-    # ---------------- ML Prediction ----------------
-    user_vec = vectorizer.transform([user_text])
+    # -------- LSTM Prediction --------
+    cleaned = clean_text(text)
+    seq = tokenizer.texts_to_sequences([cleaned])[0]
+    padded = pad_sequence(seq)
 
-    raw_prediction = model.predict(user_vec)[0]
+    x = torch.tensor([padded], dtype=torch.long).to(device)
 
-    # Confidence score (SAFE)
-    proba = model.predict_proba(user_vec)[0]
-    confidence = round(float(max(proba)) * 100, 1)
+    with torch.no_grad():
+        logits = model(x)
+        probs = torch.softmax(logits, dim=1)[0]
+        idx = torch.argmax(probs).item()
+        confidence = round(float(probs[idx]) * 100, 1)
 
-    category = LABEL_MAP.get(raw_prediction.lower(), raw_prediction)
+    category = label_encoder.inverse_transform([idx])[0].capitalize()
+    risk = map_risk(category)
 
-    # ---------------- Sentiment Analysis ----------------
-    blob = TextBlob(user_text)
-    sentiment_score = round(blob.sentiment.polarity, 3)
-
+    # -------- Sentiment --------
+    sentiment_score = round(TextBlob(text).sentiment.polarity, 3)
     if sentiment_score > 0.2:
         sentiment_label = "Positive"
     elif sentiment_score < -0.2:
@@ -159,32 +160,21 @@ def analyze():
     else:
         sentiment_label = "Neutral"
 
-    # -------- SAFETY OVERRIDE --------
-    lower_text = user_text.lower()
-
-    if category == "Suicidal" or any(k in lower_text for k in SUICIDE_KEYWORDS):
-        sentiment_label = "Negative"
-        sentiment_score = -0.7
-
-    # ---------------- Risk ----------------
-    risk = map_risk(category)
-
-    # ---------------- Recommendation ----------------
+    # -------- Recommendation --------
     recommendation = get_recommendation(category, risk)
 
-    # ---------------- Response ----------------
     return jsonify({
         "category": category,
         "risk": risk,
         "sentiment_label": sentiment_label,
         "sentiment_score": sentiment_score,
-        "recommendation": recommendation,
-        "word_count": len(user_text.split()),
-        "confidence": confidence
+        "confidence": confidence,
+        "word_count": len(text.split()),
+        "recommendation": recommendation
     })
 
-# -------------------------------
+# ----------------------------
 # Run App
-# -------------------------------
+# ----------------------------
 if __name__ == "__main__":
     app.run(debug=True, use_reloader=False)
