@@ -1,180 +1,155 @@
-# ==============================
-# FINAL LSTM Inference Flask App
-# ==============================
+# =========================================
+# FINAL DISTILBERT INFERENCE FLASK APP
+# MATCHES train_bert.py (Single-Stage)
+# =========================================
 
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 import torch
-import torch.nn as nn
-import dill
+import numpy as np
 import re
+import time
+from transformers import DistilBertTokenizerFast, DistilBertForSequenceClassification
 from textblob import TextBlob
+import os
 
-# ----------------------------
-# CONFIG
-# ----------------------------
-MODEL_PATH = "lstm_model.pth"
-TOKENIZER_PATH = "tokenizer.pkl"
-LABEL_ENCODER_PATH = "label_encoder.pkl"
-MAX_LEN = 100
+# -----------------------------
+# CONFIG (MUST MATCH TRAINING)
+# -----------------------------
+MODEL_DIR = "bert_model"
+LABELS_PATH = "label_classes.npy"
+MAX_LEN = 96   # ✅ MUST match training
 
-# ----------------------------
-# Flask App
-# ----------------------------
+# -----------------------------
+# FLASK
+# -----------------------------
 app = Flask(__name__)
 CORS(app)
+device = torch.device("cpu")
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# -----------------------------
+# LOAD MODEL
+# -----------------------------
+print("🤖 Loading model...")
 
-# ----------------------------
-# Tokenizer (MUST MATCH TRAINING)
-# ----------------------------
-class SimpleTokenizer:
-    def __init__(self, oov_token="<OOV>"):
-        self.oov_token = oov_token
-        self.word_index = {}
-
-    def texts_to_sequences(self, texts):
-        sequences = []
-        for text in texts:
-            seq = [
-                self.word_index.get(word, self.word_index[self.oov_token])
-                for word in text.split()
-            ]
-            sequences.append(seq)
-        return sequences
-
-# ----------------------------
-# LSTM Model
-# ----------------------------
-class LSTMModel(nn.Module):
-    def __init__(self, vocab_size, embed_dim=128, hidden_dim=128, output_dim=7):
-        super().__init__()
-        self.embedding = nn.Embedding(vocab_size, embed_dim, padding_idx=0)
-        self.lstm = nn.LSTM(embed_dim, hidden_dim, batch_first=True)
-        self.fc = nn.Linear(hidden_dim, output_dim)
-
-    def forward(self, x):
-        x = self.embedding(x)
-        _, (h, _) = self.lstm(x)
-        return self.fc(h[-1])
-
-# ----------------------------
-# Load Artifacts
-# ----------------------------
-with open(TOKENIZER_PATH, "rb") as f:
-    tokenizer = dill.load(f)
-
-with open(LABEL_ENCODER_PATH, "rb") as f:
-    label_encoder = dill.load(f)
-
-# MUST match training-time vocab size
-VOCAB_SIZE = 20000
-
-NUM_CLASSES = len(label_encoder.classes_)
-
-model = LSTMModel(VOCAB_SIZE, output_dim=NUM_CLASSES).to(device)
-model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
+tokenizer = DistilBertTokenizerFast.from_pretrained(MODEL_DIR)
+model = DistilBertForSequenceClassification.from_pretrained(MODEL_DIR)
+model.to(device)
 model.eval()
 
-print("✅ LSTM model and tokenizer loaded successfully")
+label_classes = np.load(LABELS_PATH, allow_pickle=True)
+label_classes = list(label_classes)
 
-# ----------------------------
-# Helpers
-# ----------------------------
+print("✅ Model loaded")
+print("Classes:", label_classes)
+
+# -----------------------------
+# HELPERS
+# -----------------------------
 def clean_text(text):
     text = text.lower()
-    text = re.sub(r"http\S+", "", text)
-    text = re.sub(r"[^a-z\s]", "", text)
-    return re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"http\S+|www\S+", "", text)
+    text = re.sub(r"@\w+|#\w+", "", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
 
-def pad_sequence(seq):
-    seq = seq[:MAX_LEN]
-    return seq + [0] * (MAX_LEN - len(seq))
+def sentiment_info(text):
+    blob = TextBlob(text)
+    return round(blob.sentiment.polarity, 3)
 
-def map_risk(category):
-    if category in ["Suicidal", "Bipolar", "PTSD"]:
+def risk_from_label(label):
+    if label == "Suicidal":
+        return "Critical"
+    if label in ["Bipolar", "PTSD", "Personality_disorder"]:
         return "High"
-    elif category in ["Depression", "Anxiety", "Stress"]:
+    if label in ["Depression", "Anxiety", "Stress"]:
         return "Medium"
     return "Low"
 
-def get_recommendation(category, risk):
-    if category == "Suicidal":
-        return (
-            "🚨 High-risk mental health state detected. "
-            "Immediate professional help is strongly recommended. "
-            "If you are in danger, contact emergency services or a suicide prevention helpline immediately."
-        )
-    if category == "Bipolar":
-        return "Consult a psychiatrist for mood stabilization and maintain a structured routine."
-    if category == "PTSD":
-        return "Trauma-focused therapy and professional counseling are recommended."
-    if category == "Depression":
-        return "Therapy, regular routine, physical activity, and social support can help."
-    if category == "Anxiety":
-        return "Mindfulness, breathing exercises, and professional guidance may help."
-    if category == "Stress":
-        return "Time management, adequate rest, and relaxation techniques are recommended."
-    return "Maintain healthy habits and continue positive coping strategies."
+def recommendation(label):
+    recs = {
+        "Suicidal": "🚨 Immediate professional help is required. Contact emergency services or a suicide helpline.",
+        "Depression": "Consider therapy, routine building, and social support.",
+        "Anxiety": "Practice mindfulness, breathing exercises, and stress reduction.",
+        "Stress": "Reduce workload, take breaks, and prioritize rest.",
+        "Bipolar": "Consult a psychiatrist for mood stabilization.",
+        "PTSD": "Trauma-focused therapy is strongly recommended.",
+        "Personality_disorder": "Long-term therapy and professional support are advised.",
+        "Well-being": "Maintain healthy habits and positive coping strategies.",
+        "Normal": "No significant mental health concerns detected."
+    }
+    return recs.get(label, "Seek professional guidance if needed.")
 
-# ----------------------------
-# Routes
-# ----------------------------
+def contains_suicide_keywords(text):
+    keywords = [
+        "kill myself", "end my life", "want to die", "suicide",
+        "better off dead", "no reason to live", "end it all"
+    ]
+    t = text.lower()
+    return any(k in t for k in keywords)
+
+# -----------------------------
+# ROUTES
+# -----------------------------
 @app.route("/")
 def home():
     return render_template("index.html")
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
-    data = request.get_json(force=True, silent=True)
+    data = request.get_json(silent=True)
     if not data or "text" not in data:
-        return jsonify({"error": "Invalid JSON input"}), 400
+        return jsonify({"error": "Invalid input"}), 400
 
     text = data["text"].strip()
-    if not text:
-        return jsonify({"error": "Empty input"}), 400
+    if len(text) < 5:
+        return jsonify({"error": "Text too short"}), 400
 
-    # -------- LSTM Prediction --------
     cleaned = clean_text(text)
-    seq = tokenizer.texts_to_sequences([cleaned])[0]
-    padded = pad_sequence(seq)
 
-    x = torch.tensor([padded], dtype=torch.long).to(device)
+    inputs = tokenizer(
+        cleaned,
+        truncation=True,
+        padding=True,
+        max_length=MAX_LEN,
+        return_tensors="pt"
+    )
+    inputs = {k: v.to(device) for k, v in inputs.items()}
 
     with torch.no_grad():
-        logits = model(x)
-        probs = torch.softmax(logits, dim=1)[0]
-        idx = torch.argmax(probs).item()
-        confidence = round(float(probs[idx]) * 100, 1)
+        logits = model(**inputs).logits
+        probs = torch.softmax(logits, dim=1)[0].cpu().numpy()
 
-    category = label_encoder.inverse_transform([idx])[0].capitalize()
-    risk = map_risk(category)
+    pred_idx = int(np.argmax(probs))
+    label = label_classes[pred_idx]
+    confidence = round(float(probs[pred_idx]) * 100, 1)
 
-    # -------- Sentiment --------
-    sentiment_score = round(TextBlob(text).sentiment.polarity, 3)
-    if sentiment_score > 0.2:
-        sentiment_label = "Positive"
-    elif sentiment_score < -0.2:
-        sentiment_label = "Negative"
-    else:
-        sentiment_label = "Neutral"
+    # 🔐 SAFETY BOOST (NOT OVERRIDE)
+    if contains_suicide_keywords(text) and label != "Suicidal":
+        suicide_idx = label_classes.index("Suicidal")
+        suicide_prob = probs[suicide_idx] * 100
+        if suicide_prob > 25:   # threshold
+            label = "Suicidal"
+            confidence = round(suicide_prob, 1)
 
-    # -------- Recommendation --------
-    recommendation = get_recommendation(category, risk)
+    sentiment = sentiment_info(text)
+    risk = risk_from_label(label)
 
     return jsonify({
-        "category": category,
+        "category": label,
         "risk": risk,
-        "sentiment_label": sentiment_label,
-        "sentiment_score": sentiment_score,
         "confidence": confidence,
-        "word_count": len(text.split()),
-        "recommendation": recommendation
+        "sentiment_score": sentiment,
+        "recommendation": recommendation(label),
+        "probabilities": {
+            label_classes[i]: round(float(probs[i]) * 100, 2)
+            for i in range(len(label_classes))
+        }
     })
 
-# ----------------------------
-# Run App
-# ----------------------------
+# -----------------------------
+# RUN
+# -----------------------------
 if __name__ == "__main__":
+    print("🚀 Server running at http://127.0.0.1:5000")
     app.run(debug=True, use_reloader=False)

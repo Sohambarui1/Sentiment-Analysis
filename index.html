@@ -97,6 +97,8 @@ header p{
     margin-bottom:2rem;
     border:1px solid var(--border);
     transition:transform 0.3s ease, box-shadow 0.3s ease;
+    position:relative;
+    min-height:400px;
 }
 
 .card:hover{
@@ -177,6 +179,8 @@ textarea:focus{
     font-weight:600;
     transition:all 0.3s ease;
     box-shadow:0 5px 15px rgba(63, 81, 181, 0.3);
+    position:relative;
+    overflow:hidden;
 }
 
 .btn:hover{
@@ -188,21 +192,149 @@ textarea:focus{
     transform:translateY(-1px);
 }
 
-.processing{
-    display:none;
-    margin-top:1.5rem;
-    padding:1rem;
-    background:#f8f9ff;
-    border-radius:12px;
-    text-align:center;
-    color:var(--muted);
+.btn:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+    transform: none !important;
 }
 
-.processing i{
-    margin-right:10px;
-    color:var(--primary);
+/* FIXED LOADING ANIMATION */
+.processing {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 18px;
+    z-index: 10;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.4s ease, visibility 0.4s ease;
 }
 
+.processing.active {
+    opacity: 1;
+    visibility: visible;
+}
+
+.processing-content {
+    text-align: center;
+    max-width: 400px;
+    padding: 2rem;
+}
+
+.loading-spinner {
+    width: 80px;
+    height: 80px;
+    margin: 0 auto 2rem;
+    position: relative;
+}
+
+.loading-spinner::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    border: 4px solid transparent;
+    border-top-color: var(--primary);
+    border-right-color: var(--primary);
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.loading-spinner i {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 2rem;
+    color: var(--primary);
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 0.7; transform: translate(-50%, -50%) scale(1); }
+    50% { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
+}
+
+.processing-text {
+    margin-top: 1rem;
+}
+
+.processing-text h4 {
+    color: var(--primary);
+    margin-bottom: 0.5rem;
+    font-size: 1.2rem;
+}
+
+.processing-steps {
+    margin-top: 1.5rem;
+    text-align: left;
+}
+
+.processing-step {
+    display: flex;
+    align-items: center;
+    margin-bottom: 0.8rem;
+    font-size: 0.9rem;
+    color: var(--muted);
+    opacity: 0.8;
+    animation: fadeInStep 0.5s ease forwards;
+}
+
+.processing-step.completed {
+    color: var(--success);
+    opacity: 1;
+}
+
+.processing-step.active {
+    color: var(--primary);
+    opacity: 1;
+    font-weight: 600;
+}
+
+.processing-step i {
+    margin-right: 10px;
+    font-size: 1rem;
+}
+
+.processing-step .step-check {
+    color: var(--success);
+    display: none;
+}
+
+.processing-step.completed .step-check {
+    display: inline-block;
+}
+
+.processing-step.completed .step-spinner {
+    display: none;
+}
+
+@keyframes fadeInStep {
+    from {
+        opacity: 0;
+        transform: translateX(-10px);
+    }
+    to {
+        opacity: 0.8;
+        transform: translateX(0);
+    }
+}
+
+/* Fixed result section */
 .result{
     display:none;
     animation:fadeIn 0.5s ease;
@@ -287,12 +419,16 @@ textarea:focus{
 .risk-medium{ border-left-color:var(--warning); }
 .risk-low{ border-left-color:var(--success); }
 
-.chart-container{
-    margin:3.5rem 0;
-    padding:1.2rem;
-    background:#f8f9ff;
-    border-radius:12px;
-    text-align:left;
+.chart-wrapper {
+    position: relative;
+    width: 100%;
+    height: 320px;
+    margin: 0 auto;
+}
+
+.chart-container canvas {
+    display: block;
+    max-width: 100%;
 }
 
 .stats{
@@ -413,6 +549,16 @@ textarea:focus{
     .stat-item{
         min-width:120px;
     }
+    
+    .processing-content {
+        padding: 1rem;
+    }
+    
+    .loading-spinner {
+        width: 60px;
+        height: 60px;
+        margin-bottom: 1.5rem;
+    }
 }
 </style>
 </head>
@@ -430,33 +576,62 @@ textarea:focus{
 </header>
 
 <div class="card">
-    <h3><i class="fas fa-edit"></i> Input Text for Analysis</h3>
-    <p style="color:var(--muted); margin-bottom:1.5rem;">
-        Enter a description of your thoughts, feelings, or mood. The system will analyze it for mental health indicators.
-    </p>
-    
-    <div class="input-group">
-        <textarea id="userText" placeholder="Example: I've been feeling extremely anxious lately, having trouble sleeping, and find it hard to concentrate on my work. I feel overwhelmed most days..."></textarea>
+    <div class="input-section">
+        <h3><i class="fas fa-edit"></i> Input Text for Analysis</h3>
+        <p style="color:var(--muted); margin-bottom:1.5rem;">
+            Enter a description of your thoughts, feelings, or mood. The system will analyze it for mental health indicators.
+        </p>
         
-        <div class="samples">
-            <div style="font-size:0.9rem; color:var(--muted); margin-right:10px;">Try sample:</div>
-            <button class="sample-btn" onclick="setSample(0)">Anxiety Example</button>
-            <button class="sample-btn" onclick="setSample(1)">Depression Example</button>
-            <button class="sample-btn" onclick="setSample(2)">Stress Example</button>
-            <button class="sample-btn" onclick="setSample(3)">Positive Example</button>
+        <div class="input-group">
+            <textarea id="userText" placeholder="Example: I've been feeling extremely anxious lately, having trouble sleeping, and find it hard to concentrate on my work. I feel overwhelmed most days..."></textarea>
+            
+            <div class="samples">
+                <div style="font-size:0.9rem; color:var(--muted); margin-right:10px;">Try sample:</div>
+                <button class="sample-btn" onclick="setSample(0)">Anxiety Example</button>
+                <button class="sample-btn" onclick="setSample(1)">Depression Example</button>
+                <button class="sample-btn" onclick="setSample(2)">Stress Example</button>
+                <button class="sample-btn" onclick="setSample(3)">Positive Example</button>
+            </div>
         </div>
+        
+        <button class="btn" onclick="analyze()" id="analyzeBtn">
+            <i class="fas fa-chart-line"></i> Analyze Text
+        </button>
     </div>
     
-    <button class="btn" onclick="analyze()" id="analyzeBtn">
-        <i class="fas fa-chart-line"></i> Analyze Text
-    </button>
-    
+    <!-- FIXED LOADING ANIMATION -->
     <div class="processing" id="processing">
-        <i class="fas fa-spinner fa-spin"></i> 
-        <div>
-            <strong>Analyzing your text...</strong>
-            <div style="font-size:0.9rem; margin-top:5px;">
-                Processing sentiment, extracting keywords, and evaluating mental health indicators
+        <div class="processing-content">
+            <div class="loading-spinner">
+                <i class="fas fa-brain"></i>
+            </div>
+            
+            <div class="processing-text">
+                <h4>Analyzing Your Text</h4>
+                <p>Please wait while we process your input...</p>
+            </div>
+            
+            <div class="processing-steps">
+                <div class="processing-step" id="step1">
+                    <i class="fas fa-spinner fa-spin step-spinner"></i>
+                    <i class="fas fa-check step-check"></i>
+                    Processing text sentiment
+                </div>
+                <div class="processing-step" id="step2">
+                    <i class="fas fa-spinner fa-spin step-spinner"></i>
+                    <i class="fas fa-check step-check"></i>
+                    Extracting keywords
+                </div>
+                <div class="processing-step" id="step3">
+                    <i class="fas fa-spinner fa-spin step-spinner"></i>
+                    <i class="fas fa-check step-check"></i>
+                    Evaluating mental health indicators
+                </div>
+                <div class="processing-step" id="step4">
+                    <i class="fas fa-spinner fa-spin step-spinner"></i>
+                    <i class="fas fa-check step-check"></i>
+                    Generating recommendations
+                </div>
             </div>
         </div>
     </div>
@@ -517,8 +692,9 @@ textarea:focus{
     
     <div class="chart-container">
         <h4><i class="fas fa-chart-bar"></i> Risk Level Visualization</h4>
-        <canvas id="riskChart"</canvas>
-
+        <div class="chart-wrapper">
+            <canvas id="riskChart"></canvas>
+        </div>
     </div>
     
     <div class="recommendation-box">
@@ -551,77 +727,208 @@ const samples = [
     "I feel generally positive about life. I have good relationships, enjoy my work, and practice mindfulness regularly. Some days are challenging, but I have healthy coping mechanisms."
 ];
 
-let chart = null;
-let riskColors = {
-    'High': '#f44336',
-    'Medium': '#ff9800',
-    'Low': '#4caf50'
+// Mock data for different conditions
+const mockResults = {
+    0: { // Anxiety
+        sentiment_label: "Negative",
+        sentiment_score: -0.8,
+        confidence: 87.5,
+        category: "Anxiety Disorder",
+        risk: "High Risk",
+        probabilities: {
+            "Anxiety": 75,
+            "Depression": 15,
+            "Stress": 8,
+            "Well-being": 2
+        },
+        recommendation: "Consider speaking with a mental health professional about anxiety management techniques. Practice deep breathing exercises, mindfulness meditation, and establish a consistent sleep routine. Consider limiting caffeine intake and practice gradual exposure to anxiety-provoking situations."
+    },
+    1: { // Depression
+        sentiment_label: "Very Negative",
+        sentiment_score: -0.95,
+        confidence: 92.3,
+        category: "Major Depression",
+        risk: "High Risk",
+        probabilities: {
+            "Depression": 85,
+            "Anxiety": 10,
+            "Stress": 4,
+            "Well-being": 1
+        },
+        recommendation: "Please seek professional help immediately. Depression is treatable with therapy and/or medication. Reach out to a mental health professional, trusted friend, or family member. Consider contacting a crisis helpline if you're having thoughts of self-harm."
+    },
+    2: { // Stress
+        sentiment_label: "Negative",
+        sentiment_score: -0.7,
+        confidence: 78.9,
+        category: "Chronic Stress",
+        risk: "Medium Risk",
+        probabilities: {
+            "Stress": 65,
+            "Anxiety": 25,
+            "Depression": 8,
+            "Well-being": 2
+        },
+        recommendation: "Implement stress management strategies such as regular exercise, time management techniques, and setting healthy boundaries at work. Consider mindfulness practices, taking regular breaks, and ensuring adequate sleep. Delegate tasks when possible and practice saying 'no' to excessive demands."
+    },
+    3: { // Positive
+        sentiment_label: "Positive",
+        sentiment_score: 0.85,
+        confidence: 88.2,
+        category: "Good Mental Health",
+        risk: "Low Risk",
+        probabilities: {
+            "Well-being": 80,
+            "Stress": 12,
+            "Anxiety": 5,
+            "Depression": 3
+        },
+        recommendation: "Continue your positive mental health practices. Maintain your mindfulness routine, nurture your relationships, and continue engaging in activities you enjoy. Consider sharing your coping strategies with others who may benefit."
+    }
 };
+
+let chart = null;
+let currentSampleIndex = 0;
+let processingTimeout = null;
 
 function setSample(index) {
     document.getElementById('userText').value = samples[index];
+    currentSampleIndex = index;
+}
+
+function showProcessing() {
+    const processingEl = document.getElementById('processing');
+    const analyzeBtn = document.getElementById('analyzeBtn');
+    
+    // Reset all steps
+    for (let i = 1; i <= 4; i++) {
+        const step = document.getElementById('step' + i);
+        step.classList.remove('completed', 'active');
+        step.querySelector('.step-spinner').style.display = 'inline-block';
+        step.querySelector('.step-check').style.display = 'none';
+    }
+    
+    // Show processing overlay
+    processingEl.classList.add('active');
+    analyzeBtn.disabled = true;
+    analyzeBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+    
+    // Animate steps one by one
+    animateProcessingSteps();
+}
+
+function animateProcessingSteps() {
+    let currentStep = 0;
+    const totalSteps = 4;
+    
+    function nextStep() {
+        if (currentStep > 0) {
+            const prevStep = document.getElementById('step' + currentStep);
+            prevStep.classList.remove('active');
+            prevStep.classList.add('completed');
+            prevStep.querySelector('.step-spinner').style.display = 'none';
+            prevStep.querySelector('.step-check').style.display = 'inline-block';
+        }
+        
+        currentStep++;
+        
+        if (currentStep <= totalSteps) {
+            const currentStepEl = document.getElementById('step' + currentStep);
+            currentStepEl.classList.add('active');
+            
+            // Random delay between steps (400-800ms)
+            const delay = 400 + Math.random() * 400;
+            setTimeout(nextStep, delay);
+        }
+    }
+    
+    // Start animation
+    setTimeout(nextStep, 300);
+}
+
+function hideProcessing() {
+    const processingEl = document.getElementById('processing');
+    const analyzeBtn = document.getElementById('analyzeBtn');
+    
+    processingEl.classList.remove('active');
+    analyzeBtn.disabled = false;
+    analyzeBtn.innerHTML = '<i class="fas fa-chart-line"></i> Analyze Text';
+    
+    // Clear any existing timeout
+    if (processingTimeout) {
+        clearTimeout(processingTimeout);
+        processingTimeout = null;
+    }
+}
+
+// Generate mock analysis based on text content
+function mockAnalyze(text) {
+    const textLower = text.toLowerCase();
+    
+    if (textLower.includes('anxious') || textLower.includes('panic') || textLower.includes('overwhelmed')) {
+        return mockResults[0];
+    } else if (textLower.includes('sad') || textLower.includes('no energy') || textLower.includes('life isn\'t worth')) {
+        return mockResults[1];
+    } else if (textLower.includes('stress') || textLower.includes('deadlines') || textLower.includes('irritable')) {
+        return mockResults[2];
+    } else if (textLower.includes('positive') || textLower.includes('good') || textLower.includes('enjoy')) {
+        return mockResults[3];
+    } else {
+        return {
+            sentiment_label: "Neutral",
+            sentiment_score: 0.1,
+            confidence: 65.5,
+            category: "General Assessment",
+            risk: "Low Risk",
+            probabilities: {
+                "Well-being": 45,
+                "Stress": 30,
+                "Anxiety": 15,
+                "Depression": 10
+            },
+            recommendation: "Your text shows mixed emotional indicators. Consider maintaining a mood journal to track patterns, and if concerns persist, consult with a mental health professional for personalized guidance."
+        };
+    }
 }
 
 function analyze() {
     const text = document.getElementById('userText').value.trim();
-    const analyzeBtn = document.getElementById('analyzeBtn');
-    
-    if (!text) {
-        alert("Please enter some text for analysis.");
+    if (!text || text.length < 10) {
+        alert("Please enter at least 10 characters.");
         return;
     }
-    
-    if (text.length < 10) {
-        alert("Please enter at least 10 characters for meaningful analysis.");
-        return;
-    }
-    
-    // Show processing
-    document.getElementById('processing').style.display = 'flex';
-    analyzeBtn.disabled = true;
-    analyzeBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
-    
-    // Send request
+
+    showProcessing();
+
     fetch("/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({text: text})
+        body: JSON.stringify({ text })
     })
     .then(res => {
-        if (!res.ok) {
-            throw new Error(`HTTP error! status: ${res.status}`);
-        }
+        if (!res.ok) throw new Error("Server error");
         return res.json();
     })
     .then(data => {
-        if (data.error) {
-            throw new Error(data.error);
-        }
-        document.getElementById('processing').style.display = 'none';
-        analyzeBtn.disabled = false;
-        analyzeBtn.innerHTML = '<i class="fas fa-chart-line"></i> Analyze Text';
+        hideProcessing();
         showResult(data);
     })
-    .catch(error => {
-        console.error('Error:', error);
-        document.getElementById('processing').style.display = 'none';
-        analyzeBtn.disabled = false;
-        analyzeBtn.innerHTML = '<i class="fas fa-chart-line"></i> Analyze Text';
-        alert(`Analysis failed: ${error.message}. Please try again.`);
+    .catch(err => {
+        hideProcessing();
+        alert("Analysis failed. Please try again.");
+        console.error(err);
     });
 }
 
 function showResult(data) {
-    // SAFETY CHECK
-    if (!data || data.error) {
-        alert(data?.error || "Unexpected error occurred");
-        return;
-    }
-
     // Show result section
     const resultBox = document.getElementById('resultBox');
     resultBox.style.display = 'block';
-    resultBox.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    
+    // Smooth scroll to results
+    setTimeout(() => {
+        resultBox.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
 
     // Time
     document.getElementById('time').innerHTML =
@@ -629,53 +936,49 @@ function showResult(data) {
 
     // ===== SENTIMENT =====
     const sentimentLabel = data.sentiment_label || "Neutral";
-    const sentimentScore = data.sentiment_score ?? 0;
+    const sentimentScore = data.sentiment_score || 0;
 
     document.getElementById('sentimentScore').textContent = sentimentScore.toFixed(2);
     document.getElementById('sentimentLabel').textContent = sentimentLabel;
 
     const sentimentCircle = document.getElementById('sentimentCircle');
     sentimentCircle.className = 'sentiment-circle';
-
-    if (sentimentLabel.toLowerCase().includes('positive')) {
+    
+    if (sentimentScore > 0.3) {
         sentimentCircle.classList.add('positive');
-    } else if (sentimentLabel.toLowerCase().includes('negative')) {
+    } else if (sentimentScore < -0.3) {
         sentimentCircle.classList.add('negative');
     } else {
         sentimentCircle.classList.add('neutral');
     }
 
     // ===== CATEGORY & RISK =====
-    document.getElementById('category').textContent =
-        data.category || "Not Available";
-
+    document.getElementById('category').textContent = data.category || "Not Available";
+    
     const riskText = data.risk || "Low";
     document.getElementById('risk').textContent = riskText;
 
     // Color-code risk box
     const riskBox = document.getElementById('riskBox');
     riskBox.className = 'info-box';
+    
+    const riskLower = riskText.toLowerCase();
 
-    if (riskText.includes('High')) {
-        riskBox.classList.add('risk-high');
-    } else if (riskText.includes('Medium')) {
-        riskBox.classList.add('risk-medium');
-    } else {
-        riskBox.classList.add('risk-low');
-    }
+if (riskLower.includes('critical') || riskLower.includes('high')) {
+    riskBox.classList.add('risk-high');
+} 
+else if (riskLower.includes('medium')) {
+    riskBox.classList.add('risk-medium');
+} 
+else {
+    riskBox.classList.add('risk-low');
+}
+
 
     // ===== CONFIDENCE =====
-    let confidence = 0;
-    if (data.confidence !== undefined && data.confidence !== null) {
-        confidence = parseFloat(data.confidence);
-    } else {
-        // Fallback: calculate from sentiment if confidence not provided
-        confidence = Math.min(100, Math.max(0, (Math.abs(sentimentScore) * 100) + 50));
-    }
-    
-    if (isNaN(confidence)) {
-        confidence = 0;
-    }
+    let confidence = data.confidence || 0;
+    if (confidence > 100) confidence = 100;
+    if (confidence < 0) confidence = 0;
     
     document.getElementById('confidenceScore').textContent = confidence.toFixed(1) + '%';
     
@@ -684,7 +987,6 @@ function showResult(data) {
         const confidenceFill = document.getElementById('confidenceFill');
         confidenceFill.style.width = confidence + '%';
         
-        // Color based on confidence
         if (confidence >= 80) {
             confidenceFill.style.background = 'linear-gradient(90deg, #4caf50, #66bb6a)';
         } else if (confidence >= 60) {
@@ -700,7 +1002,7 @@ function showResult(data) {
 
     // ===== RISK VALUE =====
     const riskValue = document.getElementById('riskValue');
-    let riskPercent = 25; // Default low
+    let riskPercent = 25;
     
     if (riskText.includes('High')) {
         riskPercent = 85;
@@ -713,60 +1015,63 @@ function showResult(data) {
                            riskText.includes('Medium') ? '#ff9800' : '#4caf50';
 
     // ===== RECOMMENDATION =====
-    document.getElementById('recommendation').textContent =
+    document.getElementById('recommendation').textContent = 
         data.recommendation || "No recommendation available.";
 
     // ===== CHART =====
-    drawChart(riskText);
+    drawChart(data.probabilities || {});
 }
 
-function drawChart(riskText) {
-    const ctx = document.getElementById('riskChart').getContext('2d');
+function drawChart(probabilities) {
+    const ctx = document.getElementById("riskChart").getContext("2d");
 
-    if (chart) {
-        chart.destroy();
+    if (chart) chart.destroy();
+
+    if (!probabilities || Object.keys(probabilities).length === 0) {
+        probabilities = { "Well-being": 100 };
     }
 
-    let riskValue = 25; // Default low
-    let chartColor = '#4caf50'; // Default green
-    
-    if (riskText.includes('High')) {
-        riskValue = 85;
-        chartColor = '#f44336';
-    } else if (riskText.includes('Medium')) {
-        riskValue = 55;
-        chartColor = '#ff9800';
-    }
+    // Remove zero / invalid values
+    const entries = Object.entries(probabilities)
+        .filter(([_, v]) => typeof v === "number" && v > 0);
+
+    const labels = entries.map(e => e[0]);
+    const values = entries.map(e => e[1]);
+
+    const total = values.reduce((a, b) => a + b, 0);
+    const normalized = values.map(v => (v / total) * 100);
+
+    const colors = labels.map(l => {
+        if (l === "Well-being") return "#4caf50";
+        if (l === "Suicidal") return "#f44336";
+        if (l === "Depression") return "#9c27b0";
+        if (l === "Anxiety") return "#ff9800";
+        if (l === "Stress") return "#2196f3";
+        return "#607d8b";
+    });
 
     chart = new Chart(ctx, {
-        type: 'doughnut',
+        type: "doughnut",
         data: {
-            labels: ['Risk Level', 'Remaining'],
+            labels,
             datasets: [{
-                data: [riskValue, 100 - riskValue],
-                backgroundColor: [chartColor, '#e0e0e0'],
-                borderWidth: 0
+                data: normalized,
+                backgroundColor: colors,
+                borderWidth: 2,
+                borderColor: "#fff"
             }]
         },
         options: {
             responsive: true,
-            maintainAspectRatio: true,
-            aspectRatio: 2,
-            cutout: '70%',
+            maintainAspectRatio: false,
+            cutout: "65%",
             plugins: {
-                legend: { display: false },
+                legend: { position: "bottom" },
                 tooltip: {
                     callbacks: {
-                        label: function(context) {
-                            return `${context.label}: ${context.parsed}%`;
-                        }
+                        label: ctx => `${ctx.label}: ${ctx.parsed.toFixed(1)}%`
                     }
                 }
-            },
-            animation: {
-                animateRotate: true,
-                animateScale: true,
-                duration: 1000
             }
         }
     });
