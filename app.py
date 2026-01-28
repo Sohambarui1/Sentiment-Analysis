@@ -60,11 +60,13 @@ def sentiment_info(text):
 def risk_from_label(label):
     if label == "Suicidal":
         return "Critical"
-    if label in ["Bipolar", "PTSD", "Personality_disorder"]:
+    if label in ["Bipolar", "Personality_disorder"]:
         return "High"
     if label in ["Depression", "Anxiety", "Stress"]:
         return "Medium"
-    return "Low"
+    if label == "Normal":
+        return "Low"
+    return "Unknown"
 
 def recommendation(label):
     recs = {
@@ -73,10 +75,8 @@ def recommendation(label):
         "Anxiety": "Practice mindfulness, breathing exercises, and stress reduction.",
         "Stress": "Reduce workload, take breaks, and prioritize rest.",
         "Bipolar": "Consult a psychiatrist for mood stabilization.",
-        "PTSD": "Trauma-focused therapy is strongly recommended.",
         "Personality_disorder": "Long-term therapy and professional support are advised.",
-        "Well-being": "Maintain healthy habits and positive coping strategies.",
-        "Normal": "No significant mental health concerns detected."
+        "Normal": "No significant mental health concerns detected. Maintain healthy habits and positive routines."
     }
     return recs.get(label, "Seek professional guidance if needed.")
 
@@ -106,6 +106,7 @@ def analyze():
         return jsonify({"error": "Text too short"}), 400
 
     cleaned = clean_text(text)
+    sentiment = sentiment_info(text)
 
     inputs = tokenizer(
         cleaned,
@@ -122,23 +123,61 @@ def analyze():
 
     pred_idx = int(np.argmax(probs))
     label = label_classes[pred_idx]
-    confidence = round(float(probs[pred_idx]) * 100, 1)
+    confidence = float(probs[pred_idx])
 
-    # 🔐 SAFETY BOOST (NOT OVERRIDE)
+    # Get probabilities of illness classes
+    mental_illness_indices = [i for i, lbl in enumerate(label_classes)
+                             if lbl not in ["Normal"]]
+    mental_illness_prob = np.sum([probs[i] for i in mental_illness_indices])
+    normal_idx = label_classes.index("Normal")
+    normal_prob = probs[normal_idx]
+
+    # 🎯 CONSERVATIVE CLASSIFICATION BASED ON DATASET
+    # Dataset has: Normal, Depression, Suicidal, Anxiety, Bipolar, Stress, Personality_disorder
+    # Trust the model's predictions but add minimal sentiment-based adjustments
+
+    # Only boost Normal for strongly positive sentiment with very weak illness signals
+    if sentiment > 0.3 and mental_illness_prob < 0.3 and normal_prob > 0.4:
+        label = "Normal"
+        confidence = max(confidence, 0.85)
+
+    # For borderline cases where Normal is close to winning, let the model decide
+    elif label != "Normal" and normal_prob > 0.25 and normal_prob > mental_illness_prob * 0.9:
+        # Only switch if Normal is very close to the predicted class
+        if abs(normal_prob - confidence) < 0.15:
+            label = "Normal"
+            confidence = normal_prob
+    
+    # For Normal predictions, verify they're solid
+    if label == "Normal":
+        mental_illness_indices = [i for i, lbl in enumerate(label_classes) 
+                                 if lbl not in ["Normal"]]
+        mental_illness_prob = np.sum([probs[i] for i in mental_illness_indices])
+        
+        # Boost confidence if mental illness signals are very weak
+        if mental_illness_prob < 0.30:
+            confidence = max(confidence, 0.70)
+        elif mental_illness_prob > 0.60 and confidence < 0.30:
+            # High illness signals but Normal won - reconsider
+            alt_idx = np.argmax([probs[i] for i in mental_illness_indices])
+            label = label_classes[mental_illness_indices[alt_idx]]
+            confidence = probs[mental_illness_indices[alt_idx]]
+
+    # 🔐 SAFETY BOOST (SUICIDAL DETECTION)
     if contains_suicide_keywords(text) and label != "Suicidal":
         suicide_idx = label_classes.index("Suicidal")
-        suicide_prob = probs[suicide_idx] * 100
-        if suicide_prob > 25:   # threshold
+        suicide_prob = probs[suicide_idx]
+        if suicide_prob > 0.25:   # threshold
             label = "Suicidal"
-            confidence = round(suicide_prob, 1)
+            confidence = suicide_prob
 
-    sentiment = sentiment_info(text)
     risk = risk_from_label(label)
+    confidence_pct = round(confidence * 100, 1)
 
     return jsonify({
         "category": label,
         "risk": risk,
-        "confidence": confidence,
+        "confidence": confidence_pct,
         "sentiment_score": sentiment,
         "recommendation": recommendation(label),
         "probabilities": {

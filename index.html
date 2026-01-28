@@ -1042,7 +1042,7 @@ function drawChart(probabilities) {
     const normalized = values.map(v => (v / total) * 100);
 
     const colors = labels.map(l => {
-        if (l === "Well-being") return "#4caf50";
+        if (l === "Well-being" || l === "Normal") return "#4caf50";
         if (l === "Suicidal") return "#f44336";
         if (l === "Depression") return "#9c27b0";
         if (l === "Anxiety") return "#ff9800";
