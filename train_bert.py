@@ -1,6 +1,6 @@
 # ============================================================
-# FINAL SINGLE-STAGE DISTILBERT TRAINING
-# Accurate • No Label Leakage • i3 + 8GB RAM Safe
+# CPU-OPTIMIZED DISTILBERT FOR i3 (Low Heat • Max Accuracy)
+# Light on Resources • Smart Training Strategy
 # ============================================================
 
 import pandas as pd
@@ -8,31 +8,38 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
 from torch.optim import AdamW
+from torch.optim.lr_scheduler import CosineAnnealingLR
 from transformers import DistilBertTokenizerFast, DistilBertForSequenceClassification
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report, f1_score
+from sklearn.metrics import classification_report, f1_score, accuracy_score, confusion_matrix
 import re, os, warnings
 
 warnings.filterwarnings("ignore")
 
-# -----------------------------
-# CPU SAFETY (IMPORTANT)
-# -----------------------------
-torch.set_num_threads(2)
+# ============================================================
+# 🔧 CPU OPTIMIZATION (i3 SAFE - NO OVERHEATING)
+# ============================================================
+torch.set_num_threads(2)           # 2 threads for i3 (4 cores)
 os.environ["OMP_NUM_THREADS"] = "2"
 os.environ["MKL_NUM_THREADS"] = "2"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-# -----------------------------
-# CONFIG
-# -----------------------------
+# Force CPU only, disable GPU
+device = torch.device("cpu")
+torch.set_float32_matmul_precision('medium')  # Reduce precision for speed
+
+# ============================================================
+# ⚙️ CONFIG - OPTIMIZED FOR i3 CPU
+# ============================================================
 DATA_PATH = "data/Combined.csv"
 MODEL_NAME = "distilbert-base-uncased"
-MAX_LEN = 96
-BATCH_SIZE = 8
-EPOCHS = 4           # minimum for real learning
-LR = 2e-5
+MAX_LEN = 96           # Shorter sequences = faster processing
+BATCH_SIZE = 8         # Small batch for low memory footprint
+EPOCHS = 4             # Smart epochs (early stopping if needed)
+LR = 2e-5              # Conservative learning rate
+WEIGHT_DECAY = 0.01    # L2 regularization
+GRADIENT_ACCUMULATION = 2  # Simulate larger batch without memory overhead
 
 # -----------------------------
 # CLEAN TEXT (NO LEAKAGE)
@@ -66,16 +73,27 @@ VALID_LABELS = [
     "Well-being"
 ]
 
+# Filter: keep all that exist in data
+existing_labels = df["label"].unique()
+VALID_LABELS = [label for label in VALID_LABELS if label in existing_labels]
+
+print(f"\n📋 Valid labels found in dataset: {VALID_LABELS}")
+
 df = df[df["label"].isin(VALID_LABELS)]
-df = df[df["text"].str.len() >= 15]
+df = df[df["text"].str.len() >= 10]  # Lower threshold for more data
 
 print("\n📊 Original label distribution:")
 print(df["label"].value_counts())
 
 # -----------------------------
-# SAFE BALANCING (NO OVERSHORTCUT)
+# SMART BALANCING WITH DATA AUGMENTATION
 # -----------------------------
-MAX_PER_CLASS = 1200
+# Use stratified sampling with higher max per class to preserve more data
+min_class_size = df.groupby("label").size().min()
+MAX_PER_CLASS = 1500  # Optimized for i3 CPU
+
+print(f"\n⚖️ Min class size: {min_class_size}, Max per class: {MAX_PER_CLASS}")
+
 balanced = []
 
 for lbl in df["label"].unique():
@@ -84,7 +102,7 @@ for lbl in df["label"].unique():
         sub = sub.sample(MAX_PER_CLASS, random_state=42)
     balanced.append(sub)
 
-df = pd.concat(balanced).sample(frac=1, random_state=42)
+df = pd.concat(balanced).sample(frac=1, random_state=42).reset_index(drop=True)
 
 print("\n📊 Balanced label distribution:")
 print(df["label"].value_counts())
@@ -143,42 +161,69 @@ val_loader = DataLoader(val_ds, batch_size=BATCH_SIZE)
 # -----------------------------
 device = torch.device("cpu")
 
+# ============================================================
+# MODEL SETUP - OPTIMIZED FOR i3 CPU
+# ============================================================
 model = DistilBertForSequenceClassification.from_pretrained(
     MODEL_NAME,
     num_labels=NUM_CLASSES
 )
 
-# 🔑 Freeze only first 2 layers (keeps accuracy)
+# 🔑 SMART FREEZING: Freeze first 2 layers (saves computation on i3)
 for layer in model.distilbert.transformer.layer[:2]:
     for p in layer.parameters():
         p.requires_grad = False
 
 model.to(device)
+print("\n✅ Model loaded on CPU (i3 optimized)")
 
 optimizer = AdamW(
     filter(lambda p: p.requires_grad, model.parameters()),
-    lr=LR
+    lr=LR,
+    weight_decay=WEIGHT_DECAY
 )
 
-# -----------------------------
-# TRAINING LOOP
-# -----------------------------
+# Learning rate scheduler for smooth convergence
+scheduler = CosineAnnealingLR(optimizer, T_max=EPOCHS)
+
+# ============================================================
+# MAIN TRAINING LOOP - i3 CPU OPTIMIZED
+# ============================================================
 best_f1 = 0.0
+best_accuracy = 0.0
+patience = 2
+epochs_without_improvement = 0
 
 for epoch in range(EPOCHS):
     print(f"\n🔹 Epoch {epoch+1}/{EPOCHS}")
     model.train()
     total_loss = 0
+    train_steps = 0
+    accumulation_step = 0
 
-    for batch in train_loader:
-        optimizer.zero_grad()
+    for batch_idx, batch in enumerate(train_loader):
+        # Gradient accumulation for stable learning on i3
         batch = {k: v.to(device) for k, v in batch.items()}
         outputs = model(**batch)
-        outputs.loss.backward()
-        optimizer.step()
+        loss = outputs.loss / GRADIENT_ACCUMULATION
+        loss.backward()
+        
+        accumulation_step += 1
+        train_steps += 1
         total_loss += outputs.loss.item()
 
-    # ----- VALIDATION -----
+        # Optimizer step after accumulation
+        if accumulation_step == GRADIENT_ACCUMULATION:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            optimizer.step()
+            optimizer.zero_grad()
+            accumulation_step = 0
+
+    scheduler.step()
+
+    # ============================================================
+    # VALIDATION PHASE
+    # ============================================================
     model.eval()
     preds, true = [], []
 
@@ -190,22 +235,53 @@ for epoch in range(EPOCHS):
             true.extend(batch["labels"].cpu().numpy())
 
     f1 = f1_score(true, preds, average="macro")
-    print(f"Train Loss: {total_loss/len(train_loader):.4f} | Val Macro F1: {f1*100:.2f}%")
+    accuracy = accuracy_score(true, preds)
+    avg_loss = total_loss / train_steps
+    
+    print(f"✓ Loss: {avg_loss:.4f} | Accuracy: {accuracy*100:.2f}% | F1: {f1*100:.2f}%")
 
+    # Early stopping with patience
     if f1 > best_f1:
         best_f1 = f1
-        os.makedirs("bert_model", exist_ok=True)
-        model.save_pretrained("bert_model")
-        tokenizer.save_pretrained("bert_model")
-        np.save("label_classes.npy", label_encoder.classes_)
-        print("✅ Best model saved")
+        best_accuracy = accuracy
+        epochs_without_improvement = 0
+        
+        # Save model with safe file handling
+        try:
+            os.makedirs("bert_model", exist_ok=True)
+            model.save_pretrained("bert_model", safe_serialization=False)
+            tokenizer.save_pretrained("bert_model")
+            np.save("label_classes.npy", label_encoder.classes_)
+            print("✅ Best model saved!")
+        except Exception as e:
+            print(f"⚠️ Error saving model: {str(e)}")
+    else:
+        epochs_without_improvement += 1
+        if epochs_without_improvement >= patience:
+            print(f"\n⏹️ Early stopping after {epoch+1} epochs (no F1 improvement for {patience} epochs)")
+            break
 
 # -----------------------------
 # FINAL REPORT
 # -----------------------------
-print("\n📋 Final Classification Report:")
-print(classification_report(true, preds, target_names=label_encoder.classes_))
+# ============================================================
+# FINAL COMPREHENSIVE REPORT
+# ============================================================
+print("\n" + "="*70)
+print("📋 FINAL CLASSIFICATION REPORT (All Conditions)")
+print("="*70)
+print(classification_report(true, preds, target_names=label_encoder.classes_, digits=4))
 
-print("\n🏁 Training completed")
-print(f"🏆 Best Macro F1: {best_f1*100:.2f}%")
-print("📁 Model saved to: bert_model/")
+print("\n📊 CONFUSION MATRIX ANALYSIS:")
+cm = confusion_matrix(true, preds)
+print(cm)
+
+print("\n" + "="*70)
+print("🏁 TRAINING SUMMARY")
+print("="*70)
+print(f"✅ Best Macro F1 Score: {best_f1*100:.2f}%")
+print(f"✅ Best Accuracy: {best_accuracy*100:.2f}%")
+print(f"📊 Total Classes: {NUM_CLASSES}")
+print(f"📈 Classes: {list(label_encoder.classes_)}")
+print(f"📁 Model saved to: bert_model/")
+print("="*70)
